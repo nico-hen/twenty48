@@ -1,0 +1,151 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Answers: "is a zero-build single-file web version enough?"
+  No framework, no bundler, no dependencies. Open this file in a browser.
+  Run:  xdg-open prototypes/web-vanilla/index.html   (or just double-click it)
+  Controls: arrow keys / WASD to move, "AI Hint" button for a suggested move.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>2048 — PROTOTYPE (web)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #faf8ef; color: #776e65;
+           display: flex; flex-direction: column; align-items: center; padding: 24px; }
+    h1 { margin: 0 0 4px; }
+    .sub { color: #a89b8c; margin-bottom: 16px; font-size: 14px; }
+    #board { display: grid; grid-template-columns: repeat(4, 80px); gap: 8px;
+             background: #bbada0; padding: 8px; border-radius: 8px; }
+    .cell { width: 80px; height: 80px; border-radius: 6px; background: #cdc1b4;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 28px; font-weight: 700; }
+    .v2{background:#eee4da}.v4{background:#ede0c8}.v8{background:#f2b179;color:#f9f6f2}
+    .v16{background:#f59563;color:#f9f6f2}.v32{background:#f67c5f;color:#f9f6f2}
+    .v64{background:#f65e3b;color:#f9f6f2}.v128,.v256,.v512,.v1024,.v2048{
+            background:#edc850;color:#f9f6f2;font-size:22px}
+    .bar { margin-top: 16px; display: flex; gap: 8px; }
+    button { font: inherit; padding: 8px 14px; border: 0; border-radius: 6px;
+             background: #8f7a66; color: #f9f6f2; cursor: pointer; }
+    #msg { margin-top: 12px; min-height: 24px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>2048</h1>
+  <div class="sub">PROTOTYPE — vanilla JS, no build step</div>
+  <div id="board"></div>
+  <div class="bar">
+    <button onclick="hint()">AI Hint</button>
+    <button onclick="reset()">New Game</button>
+  </div>
+  <div id="msg">Use arrow keys or WASD.</div>
+
+  <script>
+    const SIZE = 4, WIN = 2048;
+    let board;
+
+    const empties = b => {
+      const out = [];
+      for (let r = 0; r < SIZE; r++) for (let c = 0; c < SIZE; c++)
+        if (b[r][c] === null) out.push([r, c]);
+      return out;
+    };
+
+    function spawn(b, onlyTwo = false) {
+      const cells = empties(b);
+      if (!cells.length) return;
+      const [r, c] = cells[Math.floor(Math.random() * cells.length)];
+      b[r][c] = onlyTwo ? 2 : (Math.random() < 0.25 ? 4 : 2);
+    }
+
+    function newBoard() {
+      const b = Array.from({ length: SIZE }, () => Array(SIZE).fill(null));
+      const n = 2 + Math.floor(Math.random() * 5); // req 1: random count of 2s
+      for (let i = 0; i < n; i++) spawn(b, true);
+      return b;
+    }
+
+    // move + merge one row to the LEFT
+    function compressMerge(row) {
+      const vals = row.filter(v => v !== null);
+      const out = [];
+      for (let i = 0; i < vals.length; i++) {
+        if (i + 1 < vals.length && vals[i] === vals[i + 1]) { out.push(vals[i] * 2); i++; }
+        else out.push(vals[i]);
+      }
+      while (out.length < SIZE) out.push(null);
+      return out;
+    }
+
+    const transpose = b => b[0].map((_, c) => b.map(row => row[c]));
+    const revRows = b => b.map(r => [...r].reverse());
+
+    function move(b, dir) {
+      let rows = b;
+      if (dir === 'U' || dir === 'D') rows = transpose(rows);
+      if (dir === 'R' || dir === 'D') rows = revRows(rows);
+      let moved = rows.map(compressMerge);
+      if (dir === 'R' || dir === 'D') moved = revRows(moved);
+      if (dir === 'U' || dir === 'D') moved = transpose(moved);
+      const changed = JSON.stringify(moved) !== JSON.stringify(b);
+      return { board: moved, changed };
+    }
+
+    const won = b => b.some(r => r.some(v => v === WIN));
+    function lost(b) {
+      if (empties(b).length) return false;
+      return !['L', 'R', 'U', 'D'].some(d => move(b, d).changed);
+    }
+
+    // offline heuristic AI — no network, no credentials
+    function score(b) {
+      let s = empties(b).length * 10;
+      const scan = m => { for (const line of m) for (let i = 0; i < SIZE - 1; i++)
+        if (line[i] && line[i] === line[i + 1]) s += line[i]; };
+      scan(b); scan(transpose(b));
+      return s;
+    }
+    function suggest(b) {
+      let best = null, bestS = -1;
+      for (const d of ['L', 'R', 'U', 'D']) {
+        const { board: nb, changed } = move(b, d);
+        if (changed && score(nb) > bestS) { best = d; bestS = score(nb); }
+      }
+      return { L: 'Left', R: 'Right', U: 'Up', D: 'Down' }[best] || 'no move';
+    }
+
+    function render() {
+      const el = document.getElementById('board');
+      el.innerHTML = '';
+      for (const row of board) for (const v of row) {
+        const d = document.createElement('div');
+        d.className = 'cell' + (v ? ' v' + v : '');
+        d.textContent = v ?? '';
+        el.appendChild(d);
+      }
+      const msg = document.getElementById('msg');
+      if (won(board)) msg.textContent = '🎉 You reached 2048!';
+      else if (lost(board)) msg.textContent = '💀 No moves left — game over.';
+    }
+
+    function doMove(dir) {
+      if (won(board) || lost(board)) return;
+      const { board: nb, changed } = move(board, dir);
+      if (changed) { board = nb; spawn(board); render(); } // req 5
+    }
+    function hint() { document.getElementById('msg').textContent = 'AI suggests: ' + suggest(board); }
+    function reset() { board = newBoard(); render(); }
+
+    const KEYS = {
+      ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D',
+      a: 'L', d: 'R', w: 'U', s: 'D',
+    };
+    addEventListener('keydown', e => {
+      const dir = KEYS[e.key] || KEYS[e.key.toLowerCase()];
+      if (dir) { e.preventDefault(); doMove(dir); }
+    });
+
+    reset();
+  </script>
+</body>
+</html>
