@@ -156,9 +156,7 @@ class ClaudeAdvisor:
             "max_tokens": MAX_TOKENS,
             "system": SYSTEM_PROMPT,
             "messages": [{"role": "user", "content": json.dumps(board.as_grid())}],
-            "output_config": {
-                "format": {"type": "json_schema", "schema": SUGGESTION_SCHEMA}
-            },
+            "output_config": {"format": {"type": "json_schema", "schema": SUGGESTION_SCHEMA}},
         }
 
     def _interpret(self, response: _Response, board: Board) -> Advice:

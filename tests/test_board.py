@@ -65,9 +65,9 @@ def test_move_down_matches_hand_worked_golden() -> None:
 
 def test_each_tile_merges_at_most_once_per_move() -> None:
     # A full row of equal Tiles yields two merges, never one triple-merge.
-    assert Board.from_grid(
-        [[2, 2, 2, 2], [4, 4, 4, 4], [None] * 4, [None] * 4]
-    ).move(Move.LEFT).as_grid() == [
+    assert Board.from_grid([[2, 2, 2, 2], [4, 4, 4, 4], [None] * 4, [None] * 4]).move(
+        Move.LEFT
+    ).as_grid() == [
         [4, 4, None, None],
         [8, 8, None, None],
         [None, None, None, None],
@@ -77,9 +77,9 @@ def test_each_tile_merges_at_most_once_per_move() -> None:
 
 def test_a_freshly_merged_tile_does_not_merge_again_this_move() -> None:
     # [2,2,4] -> the merged 4 must not immediately re-merge with the trailing 4.
-    assert Board.from_grid(
-        [[2, 2, 4, None], [None] * 4, [None] * 4, [None] * 4]
-    ).move(Move.LEFT).as_grid()[0] == [4, 4, None, None]
+    assert Board.from_grid([[2, 2, 4, None], [None] * 4, [None] * 4, [None] * 4]).move(
+        Move.LEFT
+    ).as_grid()[0] == [4, 4, None, None]
 
 
 # A board already packed to the left: sliding LEFT changes nothing.

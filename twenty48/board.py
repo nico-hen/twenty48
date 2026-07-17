@@ -104,10 +104,7 @@ class Board:
     def empty_cells(self) -> tuple[tuple[int, int], ...]:
         """Row-major coordinates of the empty Cells."""
         return tuple(
-            (r, c)
-            for r, row in enumerate(self.rows)
-            for c, cell in enumerate(row)
-            if cell is None
+            (r, c) for r, row in enumerate(self.rows) for c, cell in enumerate(row) if cell is None
         )
 
     def has_won(self) -> bool:
