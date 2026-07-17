@@ -2,6 +2,22 @@
 
 Guidance for AI agents working in this repo.
 
+## Setup
+
+This is a Python 3.13 application.
+
+Install deps: !`task setup`.
+Start application: !`task run`.
+Run tests: !`task test`
+Run linter: !`task lint`
+Run formater: !`task format` 
+Run type-checker: !`task typecheck`
+
+## Style
+
+Follow strict PEP 8.
+
+
 ## Agent skills
 
 ### Issue tracker
