@@ -1,4 +1,4 @@
-# 2048
+# twenty48
 
 A terminal-based [2048](https://play2048.co) game with an optional,
 Claude-backed move Advisor. The game core is pure and deterministic; asking
