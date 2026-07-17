@@ -20,7 +20,7 @@ tasks:
   test:
     desc: Run the test suite
     cmds:
-      - "{{.PY}} -m pytest"
+      - "{{.PY}} -m pytest --cov=twenty48 --cov-report=term-missing --cov-report=xml tests"
 
   lint:
     desc: Check for lint errors with ruff
