@@ -13,7 +13,7 @@ The returned `move` is then validated against the board's actually-legal moves.
 An illegal or no-op suggestion becomes a status-line message, never a crash —
 the advisor's correctness never depends on the model behaving.
 
-- **Model:** `claude-sonnet-5`, extended thinking **off** — chosen for
+- **Model:** `claude-haiku-4-5`, extended thinking **off** — chosen for
   interactive responsiveness over maximal hint quality (the H key should return
   in ~a second, not stall the game). The model id and thinking setting live in a
   single named constant in `advisor.py`; sharpening hints later (Opus, or
