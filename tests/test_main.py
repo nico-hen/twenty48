@@ -1,15 +1,12 @@
-"""Tests for the twenty48 package skeleton and entry point."""
+"""Tests for the twenty48 package metadata.
 
-import pytest
+The composition root ``main`` wires real terminal I/O and is verified by playing
+the game (like the ``termios`` adapter), not unit-tested; the turn cycle it wires
+is covered at the ``loop.run`` seam in ``test_loop.py``.
+"""
 
 import twenty48
-from twenty48.__main__ import main
 
 
 def test_version_is_defined() -> None:
     assert twenty48.__version__ == "0.1.0"
-
-
-def test_main_prints_placeholder(capsys: pytest.CaptureFixture[str]) -> None:
-    main()
-    assert "twenty48" in capsys.readouterr().out
