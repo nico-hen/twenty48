@@ -41,7 +41,7 @@ class ModelConfig:
 
 # claude-sonnet-5 with extended thinking off: the H key should return in about a
 # second, not stall the game (ADR-0003).
-MODEL_CONFIG = ModelConfig(model="claude-sonnet-5", thinking={"type": "disabled"})
+MODEL_CONFIG = ModelConfig(model="claude-haiku-4-5", thinking={"type": "disabled"})
 
 # A short reply is plenty for one Move plus a one-sentence rationale.
 MAX_TOKENS = 256
