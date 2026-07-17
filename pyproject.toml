@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "twenty48"
+description = "A terminal 2048 game with an AI-backed move Advisor."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Nico Hen", email = "mailtonico@gmail.com" }]
+dynamic = ["version"]
+dependencies = []
+
+[project.scripts]
+twenty48 = "twenty48.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.hatch.version]
+path = "twenty48/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["twenty48"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
