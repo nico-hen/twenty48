@@ -1,0 +1,58 @@
+version: "3"
+
+vars:
+  VENV: .venv
+  PY: "{{.VENV}}/bin/python"
+
+tasks:
+  setup:
+    desc: Create the virtualenv and install the package with dev dependencies
+    cmds:
+      - python3 -m venv {{.VENV}}
+      - "{{.PY}} -m pip install --upgrade pip"
+      - '{{.PY}} -m pip install -e ".[dev]"'
+
+  run:
+    desc: Launch the game (placeholder for now)
+    cmds:
+      - "{{.PY}} -m twenty48"
+
+  test:
+    desc: Run the test suite
+    cmds:
+      - "{{.PY}} -m pytest"
+
+  lint:
+    desc: Check for lint errors with ruff
+    cmds:
+      - "{{.PY}} -m ruff check twenty48 tests"
+
+  format:
+    desc: Format the code with ruff
+    cmds:
+      - "{{.PY}} -m ruff format twenty48 tests"
+
+  typecheck:
+    desc: Type-check with mypy
+    cmds:
+      - "{{.PY}} -m mypy twenty48 tests"
+
+  check:
+    desc: Run lint, type-check, and tests
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test
+
+  package:
+    desc: Build the wheel and sdist into dist/
+    cmds:
+      - "{{.PY}} -m pip install --upgrade build"
+      - "{{.PY}} -m build"
+
+  publish:
+    desc: Upload the built distribution to PyPI
+    deps: [package]
+    cmds:
+      - "{{.PY}} -m pip install --upgrade twine"
+      - "{{.PY}} -m twine upload dist/*"
