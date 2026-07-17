@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 license = "MIT"
 authors = [{ name = "Nico Hen", email = "mailtonico@gmail.com" }]
 dynamic = ["version"]
-dependencies = []
+dependencies = ["anthropic>=0.40"]
 
 [project.scripts]
 twenty48 = "twenty48.__main__:main"
