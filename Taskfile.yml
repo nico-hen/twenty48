@@ -13,7 +13,7 @@ tasks:
       - '{{.PY}} -m pip install -e ".[dev]"'
 
   run:
-    desc: Launch the game (placeholder for now)
+    desc: Launch the game
     cmds:
       - "{{.PY}} -m twenty48"
 
@@ -51,8 +51,10 @@ tasks:
       - "{{.PY}} -m build"
 
   publish:
-    desc: Upload the built distribution to PyPI
+    desc: Publish the built distribution as a GitHub Release (needs gh + push access)
     deps: [package]
+    vars:
+      VERSION:
+        sh: '{{.PY}} -c "import twenty48; print(twenty48.__version__)"'
     cmds:
-      - "{{.PY}} -m pip install --upgrade twine"
-      - "{{.PY}} -m twine upload dist/*"
+      - 'gh release create v{{.VERSION}} dist/twenty48-{{.VERSION}}* --title "twenty48 v{{.VERSION}}" --generate-notes'
