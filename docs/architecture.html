@@ -1,0 +1,1723 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>twenty48 — architecture &amp; decisions</title>
+    <style>
+      /* ---------------------------------------------------------------
+         Palette: the actual 2048 tile ramp. The ordering of tile values
+         in the game is reused here as an ordering of *purity* — gold is
+         the pure core (the prize), hot orange is the outside world,
+         brown is the layer that touches secrets.
+         --------------------------------------------------------------- */
+      :root {
+        --ground: #faf8ef;
+        --ink: #776e65;
+        --ink-strong: #3c3a32;
+        --ink-soft: #a49a90;
+        --rule: #ded4c6;
+
+        --grid: #bbada0;
+        --cell: #cdc1b4;
+
+        --t2: #eee4da;
+        --t4: #ede0c8;
+        --t8: #f2b179;
+        --t16: #f59563;
+        --t32: #f67c5f;
+        --t64: #f65e3b;
+        --t128: #edcf72;
+        --t2048: #edc22e;
+        --brown: #8f7a66;
+
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        --sans: "Clear Sans", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+
+        --measure: 62rem;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        -webkit-text-size-adjust: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 16px;
+        line-height: 1.55;
+        font-weight: 400;
+      }
+
+      /* --- type scale ------------------------------------------------ */
+
+      .display {
+        font-family: var(--sans);
+        font-weight: 800;
+        letter-spacing: -0.035em;
+        line-height: 0.95;
+        color: var(--ink-strong);
+        margin: 0;
+        font-size: clamp(2.6rem, 7vw, 4.6rem);
+      }
+
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--brown);
+        margin: 0 0 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+      }
+
+      .eyebrow::after {
+        content: "";
+        flex: 1;
+        height: 2px;
+        background: var(--rule);
+      }
+
+      h2 {
+        font-weight: 800;
+        letter-spacing: -0.025em;
+        line-height: 1.05;
+        color: var(--ink-strong);
+        font-size: clamp(1.7rem, 3.4vw, 2.5rem);
+        margin: 0 0 0.5rem;
+      }
+
+      h3 {
+        font-weight: 800;
+        letter-spacing: -0.015em;
+        color: var(--ink-strong);
+        font-size: 1.16rem;
+        margin: 0 0 0.4rem;
+        line-height: 1.25;
+      }
+
+      h4 {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--brown);
+        margin: 1.3rem 0 0.45rem;
+      }
+
+      p {
+        margin: 0 0 0.85rem;
+        max-width: 46rem;
+      }
+
+      .lede {
+        font-size: 1.06rem;
+        color: var(--ink);
+      }
+
+      code,
+      .m {
+        font-family: var(--mono);
+        font-size: 0.9em;
+        background: #f0e9dd;
+        border-radius: 3px;
+        padding: 0.08em 0.32em;
+        color: var(--ink-strong);
+      }
+
+      a {
+        color: var(--ink-strong);
+        text-decoration-color: var(--t16);
+        text-decoration-thickness: 2px;
+        text-underline-offset: 2px;
+      }
+
+      a:hover {
+        text-decoration-color: var(--t64);
+      }
+
+      :focus-visible {
+        outline: 3px solid var(--t8);
+        outline-offset: 3px;
+      }
+
+      /* --- shell ----------------------------------------------------- */
+
+      .wrap {
+        max-width: var(--measure);
+        margin: 0 auto;
+        padding: 0 1.5rem;
+      }
+
+      section {
+        padding: 3.2rem 0;
+        border-top: 2px solid var(--rule);
+      }
+
+      section:first-of-type {
+        border-top: 0;
+      }
+
+      /* --- masthead -------------------------------------------------- */
+
+      .masthead {
+        padding: 3.4rem 0 2.6rem;
+      }
+
+      .masthead-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 26rem);
+        gap: 2.5rem;
+        align-items: end;
+      }
+
+      .thesis {
+        margin: 1.1rem 0 1.4rem;
+        font-size: 1.12rem;
+        max-width: 30rem;
+        color: var(--ink);
+      }
+
+      .thesis b {
+        color: var(--ink-strong);
+        font-weight: 800;
+      }
+
+      .counts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+      }
+
+      .count {
+        background: var(--t2);
+        border-radius: 4px;
+        padding: 0.5rem 0.7rem;
+        min-width: 5.6rem;
+      }
+
+      .count .n {
+        display: block;
+        font-weight: 800;
+        font-size: 1.3rem;
+        letter-spacing: -0.03em;
+        color: var(--ink-strong);
+        line-height: 1.1;
+      }
+
+      .count .l {
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--brown);
+      }
+
+      /* the one dark element on the page: real captured output */
+      .terminal {
+        background: #26221e;
+        border-radius: 6px;
+        padding: 1rem 1.1rem 1.15rem;
+        overflow-x: auto;
+        box-shadow: 0 12px 30px -18px rgba(60, 58, 50, 0.7);
+      }
+
+      .terminal-bar {
+        font-family: var(--mono);
+        font-size: 0.6rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #7d7466;
+        margin-bottom: 0.7rem;
+      }
+
+      .terminal pre {
+        margin: 0;
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        line-height: 1.45;
+        color: #d8cfc0;
+        white-space: pre;
+      }
+
+      .terminal .hint {
+        color: var(--t2048);
+      }
+
+      .terminal .ctl {
+        color: #8a8073;
+      }
+
+      .caption {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        line-height: 1.5;
+        color: var(--ink-soft);
+        margin: 0.55rem 0 0;
+        max-width: 30rem;
+      }
+
+      /* --- legend ---------------------------------------------------- */
+
+      .legend {
+        margin-top: 2.4rem;
+        border-top: 2px solid var(--rule);
+        padding-top: 1rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 1.4rem;
+        align-items: center;
+      }
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--ink);
+      }
+
+      .swatch {
+        width: 0.95rem;
+        height: 0.95rem;
+        border-radius: 3px;
+        flex: none;
+      }
+
+      .swatch.dashed {
+        background: transparent;
+        border: 2px dashed var(--brown);
+      }
+
+      .swatch.line {
+        height: 0;
+        border-top: 2px solid var(--t64);
+        border-radius: 0;
+      }
+
+      .dateline {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--ink-soft);
+        margin: 0 0 1.4rem;
+      }
+
+      /* --- the ladder: the signature diagram ------------------------- */
+
+      .ladder {
+        display: grid;
+        grid-template-columns: 3.6rem minmax(0, 1fr);
+        gap: 0.9rem;
+        background: var(--grid);
+        border-radius: 8px;
+        padding: 0.85rem;
+        margin: 0 0 1rem;
+      }
+
+      .axis {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .axis-label {
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #f3ece2;
+        white-space: nowrap;
+      }
+
+      .rungs {
+        display: grid;
+        gap: 0.55rem;
+      }
+
+      .rung {
+        display: grid;
+        gap: 0.55rem;
+      }
+
+      .rung.split {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .tile {
+        border-radius: 4px;
+        padding: 0.8rem 0.95rem;
+        color: var(--ink-strong);
+        position: relative;
+      }
+
+      .tile .name {
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: 0.95rem;
+        letter-spacing: -0.01em;
+        display: block;
+      }
+
+      .tile .role {
+        display: block;
+        font-size: 0.82rem;
+        line-height: 1.35;
+        margin-top: 0.15rem;
+      }
+
+      .tile .stat {
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        opacity: 0.72;
+        display: block;
+        margin-top: 0.35rem;
+      }
+
+      .tile.core {
+        background: var(--t2048);
+      }
+
+      .tile.edge {
+        background: var(--t16);
+      }
+
+      .tile.edge-alt {
+        background: var(--t8);
+      }
+
+      .tile.wire {
+        background: var(--t4);
+      }
+
+      .tile.root {
+        background: var(--brown);
+        color: #f7f3ec;
+      }
+
+      .tile.root .stat {
+        opacity: 0.8;
+      }
+
+      .flow {
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        letter-spacing: 0.14em;
+        color: #efe6d9;
+        text-transform: uppercase;
+      }
+
+      .rules {
+        display: grid;
+        gap: 0.5rem;
+        margin: 1.1rem 0 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .rule-item {
+        border-left: 3px dashed var(--brown);
+        padding: 0.15rem 0 0.15rem 0.8rem;
+        font-size: 0.95rem;
+      }
+
+      .rule-item b {
+        color: var(--ink-strong);
+        font-weight: 800;
+      }
+
+      /* --- ADR cards ------------------------------------------------- */
+
+      .adr {
+        border: 2px solid var(--rule);
+        border-radius: 8px;
+        padding: 1.3rem 1.4rem;
+        margin: 1.6rem 0 0;
+        background: #fdfcf7;
+      }
+
+      .adr-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.7rem;
+        margin-bottom: 0.55rem;
+      }
+
+      .adr-id {
+        font-family: var(--mono);
+        font-size: 0.66rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        background: var(--ink-strong);
+        color: var(--ground);
+        border-radius: 3px;
+        padding: 0.2rem 0.45rem;
+        flex: none;
+      }
+
+      .chose {
+        font-size: 0.95rem;
+        margin: 0 0 0.9rem;
+      }
+
+      .chose .over {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--brown);
+        margin-right: 0.35rem;
+      }
+
+      .rejected {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.45rem;
+      }
+
+      .rejected li {
+        display: grid;
+        grid-template-columns: 1.15rem minmax(0, 1fr);
+        gap: 0.55rem;
+        font-size: 0.93rem;
+        align-items: start;
+      }
+
+      .rejected .x {
+        font-family: var(--mono);
+        font-weight: 700;
+        color: var(--t64);
+        line-height: 1.5;
+      }
+
+      .rejected b {
+        color: var(--ink-strong);
+        font-weight: 700;
+      }
+
+      .consequences {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.4rem;
+      }
+
+      .consequences li {
+        display: grid;
+        grid-template-columns: 1.15rem minmax(0, 1fr);
+        gap: 0.55rem;
+        font-size: 0.93rem;
+        align-items: start;
+      }
+
+      .consequences .a {
+        font-family: var(--mono);
+        font-weight: 700;
+        color: var(--brown);
+        line-height: 1.5;
+      }
+
+      .flag {
+        margin: 1.1rem 0 0;
+        background: #f6ecd8;
+        border-left: 3px solid var(--t2048);
+        border-radius: 0 4px 4px 0;
+        padding: 0.65rem 0.85rem;
+        font-size: 0.9rem;
+      }
+
+      .flag b {
+        color: var(--ink-strong);
+      }
+
+      details {
+        margin-top: 1.1rem;
+        border-top: 2px solid var(--rule);
+        padding-top: 0.8rem;
+      }
+
+      summary {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--brown);
+        cursor: pointer;
+      }
+
+      summary:hover {
+        color: var(--ink-strong);
+      }
+
+      .full {
+        font-size: 0.9rem;
+        margin-top: 0.9rem;
+        color: var(--ink);
+      }
+
+      .full h5 {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--brown);
+        margin: 1.1rem 0 0.4rem;
+      }
+
+      .full ul {
+        margin: 0 0 0.7rem;
+        padding-left: 1.1rem;
+      }
+
+      .full li {
+        margin-bottom: 0.4rem;
+      }
+
+      .full p {
+        max-width: none;
+      }
+
+      /* --- SVG diagram ----------------------------------------------- */
+
+      .figure {
+        margin: 0 0 1.2rem;
+      }
+
+      .figure svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #fdfcf7;
+        border: 2px solid var(--rule);
+        border-radius: 8px;
+      }
+
+      .scroll-x {
+        overflow-x: auto;
+      }
+
+      .scroll-x svg {
+        min-width: 46rem;
+      }
+
+      .svg-box {
+        fill: var(--t2);
+      }
+
+      .svg-label {
+        font-family: var(--mono);
+        font-size: 12px;
+        fill: var(--ink-strong);
+      }
+
+      .svg-label.small {
+        font-size: 10.5px;
+        fill: var(--ink);
+      }
+
+      .svg-cap {
+        font-family: var(--mono);
+        font-size: 9.5px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        fill: var(--brown);
+      }
+
+      .svg-arrow {
+        stroke: var(--brown);
+        stroke-width: 2;
+        fill: none;
+      }
+
+      .svg-fail {
+        stroke: var(--t64);
+        stroke-width: 1.6;
+        fill: none;
+        opacity: 0.75;
+      }
+
+      .svg-seam {
+        stroke: var(--brown);
+        stroke-width: 2;
+        stroke-dasharray: 5 4;
+        fill: #fdfcf7;
+      }
+
+      /* --- test-double overlay --------------------------------------- */
+
+      .tile.faded {
+        background: var(--cell);
+        color: #6f6659;
+      }
+
+      .double {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-top: 0.5rem;
+      }
+
+      .tag {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        font-weight: 700;
+        background: #fdfcf7;
+        border: 2px dashed var(--brown);
+        border-radius: 3px;
+        padding: 0.14rem 0.4rem;
+        color: var(--ink-strong);
+      }
+
+      .tag .at {
+        font-weight: 400;
+        color: var(--brown);
+      }
+
+      /* --- coverage strip -------------------------------------------- */
+
+      .bars {
+        display: grid;
+        gap: 0.5rem;
+        margin: 0 0 1.2rem;
+        max-width: 44rem;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 9.5rem minmax(0, 1fr) 5.4rem;
+        gap: 0.7rem;
+        align-items: center;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+      }
+
+      .bar-track {
+        background: var(--cell);
+        border-radius: 3px;
+        height: 1.35rem;
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: 3px 0 0 3px;
+      }
+
+      .bar-row .miss {
+        color: var(--ink-soft);
+        font-size: 0.72rem;
+      }
+
+      .bar-row.total {
+        border-top: 2px solid var(--rule);
+        padding-top: 0.5rem;
+        font-weight: 700;
+        color: var(--ink-strong);
+      }
+
+      /* --- gaps ------------------------------------------------------- */
+
+      .gaps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(15.5rem, 1fr));
+        gap: 0.8rem;
+        margin: 0 0 1.4rem;
+      }
+
+      .gap {
+        border: 2px solid var(--rule);
+        border-radius: 6px;
+        padding: 0.95rem 1rem;
+        background: #fdfcf7;
+      }
+
+      .gap.headline {
+        border-color: var(--t64);
+        background: #fdf1ea;
+        grid-column: 1 / -1;
+      }
+
+      .gap .tagline {
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--brown);
+        display: block;
+        margin-bottom: 0.3rem;
+      }
+
+      .gap p {
+        margin: 0;
+        font-size: 0.9rem;
+        max-width: none;
+      }
+
+      .gap .answer {
+        margin-top: 0.5rem;
+        font-size: 0.88rem;
+        border-left: 3px solid var(--t16);
+        padding-left: 0.65rem;
+      }
+
+      .scope {
+        font-size: 0.93rem;
+        border-left: 3px dashed var(--rule);
+        padding-left: 0.85rem;
+        max-width: 46rem;
+      }
+
+      /* --- gates ------------------------------------------------------ */
+
+      .gates {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+        gap: 0.6rem;
+        margin: 0 0 1.3rem;
+      }
+
+      .gate {
+        background: var(--t2);
+        border-radius: 5px;
+        padding: 0.85rem 0.95rem;
+      }
+
+      .gate .cmd {
+        font-family: var(--mono);
+        font-weight: 700;
+        font-size: 0.85rem;
+        color: var(--ink-strong);
+        display: block;
+      }
+
+      .gate .what {
+        font-size: 0.82rem;
+        display: block;
+        margin-top: 0.2rem;
+      }
+
+      .gate .verdict {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        color: #5f7a4a;
+        display: block;
+        margin-top: 0.35rem;
+        font-weight: 700;
+      }
+
+      footer {
+        border-top: 2px solid var(--rule);
+        padding: 2rem 0 3.5rem;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        letter-spacing: 0.08em;
+        color: var(--ink-soft);
+      }
+
+      .fixtures {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        background: #f0e9dd;
+        border-radius: 6px;
+        padding: 0.9rem 1rem;
+        margin: 0.9rem 0 0;
+        max-width: 44rem;
+        line-height: 1.7;
+      }
+
+      .fixtures span {
+        color: var(--brown);
+      }
+
+      /* --- narrow screens --------------------------------------------- */
+
+      @media (max-width: 60rem) {
+        .masthead-grid {
+          grid-template-columns: minmax(0, 1fr);
+          gap: 1.8rem;
+          align-items: start;
+        }
+
+        .bar-row {
+          grid-template-columns: 7.5rem minmax(0, 1fr);
+        }
+
+        .bar-row .miss {
+          display: none;
+        }
+
+        .rung.split {
+          grid-template-columns: 1fr;
+        }
+
+        .ladder {
+          grid-template-columns: 2.4rem minmax(0, 1fr);
+          gap: 0.6rem;
+        }
+      }
+
+      /* --- motion: one quiet load sequence ---------------------------- */
+
+      @media (prefers-reduced-motion: no-preference) {
+        .rise {
+          animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+        }
+
+        .rise:nth-child(2) {
+          animation-delay: 0.06s;
+        }
+
+        .rise:nth-child(3) {
+          animation-delay: 0.12s;
+        }
+
+        @keyframes rise {
+          from {
+            opacity: 0;
+            transform: translateY(0.6rem);
+          }
+          to {
+            opacity: 1;
+            transform: none;
+          }
+        }
+      }
+
+      @media print {
+        body {
+          background: #fff;
+        }
+
+        details {
+          display: none;
+        }
+
+        section {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="masthead wrap">
+      <p class="dateline">twenty48 · architecture &amp; decisions · built 25 July 2026</p>
+      <div class="masthead-grid">
+        <div class="rise">
+          <h1 class="display">A pure core,<br />and one seam<br />to Claude.</h1>
+          <p class="thesis">
+            A terminal 2048 game whose rules are <b>pure and deterministic</b>, with asking Claude
+            for a hint as a <b>separate, swappable concern that can never break play</b>. Three
+            decisions produced that shape; this page walks each one and the structure it left behind.
+          </p>
+          <div class="counts">
+            <div class="count"><span class="n">656</span><span class="l">lines</span></div>
+            <div class="count"><span class="n">280</span><span class="l">statements</span></div>
+            <div class="count"><span class="n">61</span><span class="l">tests</span></div>
+            <div class="count"><span class="n">90%</span><span class="l">coverage</span></div>
+            <div class="count"><span class="n">5</span><span class="l">modules</span></div>
+          </div>
+        </div>
+
+        <div class="rise">
+          <div class="terminal">
+            <p class="terminal-bar">$ task run</p>
+            <pre>
++------+------+------+------+
+|    2 |    8 |      |    4 |
++------+------+------+------+
+|      |   32 |   16 |      |
++------+------+------+------+
+|  128 |   64 |      |    2 |
++------+------+------+------+
+|    4 |      |    8 |  256 |
++------+------+------+------+
+
+<span class="hint">Claude suggests LEFT:<br/>keeps the 128/64 stack anchored and opens a merge on row 1.</span>
+
+<span class="ctl">Controls: WASD / arrow keys to move, H for a hint, Q to quit</span></pre>
+          </div>
+          <p class="caption">
+            Real output, captured from <span class="m">twenty48.ui.render</span>. That highlighted
+            status line is the whole product surface for hints — and the single place every failure
+            in the Advisor path is allowed to end up.
+          </p>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="legend-item"><span class="swatch" style="background: var(--t2048)"></span> pure &amp; deterministic</span>
+        <span class="legend-item"><span class="swatch" style="background: var(--t16)"></span> touches the outside world</span>
+        <span class="legend-item"><span class="swatch" style="background: var(--brown)"></span> touches the environment &amp; secrets</span>
+        <span class="legend-item"><span class="swatch dashed"></span> seam (a Protocol, injected)</span>
+        <span class="legend-item"><span class="swatch line"></span> failure path</span>
+      </div>
+    </header>
+
+    <main>
+      <!-- =========================== STRUCTURE ======================== -->
+      <section class="wrap">
+        <p class="eyebrow">Structure</p>
+        <h2>Five modules, ordered by distance from pure logic</h2>
+        <p class="lede">
+          One flat package. Position on the ladder is the dependency direction — everything points
+          down, toward the pure core. Colour is purity: gold is the tested heart, orange is the
+          outside world, brown is the one module that may read the environment.
+        </p>
+
+        <div class="ladder">
+          <div class="axis"><span class="axis-label">further from pure logic ↑</span></div>
+          <div class="rungs">
+            <div class="rung">
+              <div class="tile root">
+                <span class="name">__main__.py</span>
+                <span class="role">
+                  Composition root. Builds the real RNG, the starting Board, the
+                  <span class="m" style="background: rgba(255, 255, 255, 0.16); color: inherit">termios</span>
+                  key-source, stdout, and — only if a credential exists — the Claude Advisor.
+                </span>
+                <span class="stat">43 stmts · the only module that reads os.environ · imports anthropic lazily</span>
+              </div>
+            </div>
+            <div class="flow">↓ injects every effect ↓</div>
+            <div class="rung">
+              <div class="tile wire">
+                <span class="name">loop.py</span>
+                <span class="role">
+                  The turn cycle: render, read one key, move-then-spawn or reject, and on
+                  <b>H</b> ask the Advisor. Every side effect arrives as an argument.
+                </span>
+                <span class="stat">37 stmts · nothing here catches: the Advisor cannot throw</span>
+              </div>
+            </div>
+            <div class="flow">↓ drives ↓</div>
+            <div class="rung split">
+              <div class="tile edge-alt">
+                <span class="name">ui.py</span>
+                <span class="role">
+                  Rendering and key parsing, both pure. The raw-mode reader is the one impure
+                  adapter, kept to 13 lines.
+                </span>
+                <span class="stat">54 stmts</span>
+              </div>
+              <div class="tile edge">
+                <span class="name">advisor.py</span>
+                <span class="role">
+                  The <b>Advisor</b> protocol and its one Claude-backed implementation. The HTTP
+                  client is injected, described by four small structural protocols.
+                </span>
+                <span class="stat">65 stmts</span>
+              </div>
+            </div>
+            <div class="flow">↓ both depend only on ↓</div>
+            <div class="rung">
+              <div class="tile core">
+                <span class="name">board.py</span>
+                <span class="role">
+                  The <b>Move</b> enum and the frozen <b>Board</b> value object. Slide, merge,
+                  legality, win, loss, spawn. No I/O, no randomness of its own — the RNG is
+                  injected.
+                </span>
+                <span class="stat">80 stmts · pure · every transformation returns a new Board</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <ul class="rules">
+          <li class="rule-item">
+            <b>Nothing below the advisor line knows Claude exists.</b> Not even
+            <span class="m">advisor.py</span> imports the SDK — it declares the slice of the client
+            it calls and takes it as a constructor argument.
+          </li>
+          <li class="rule-item">
+            <b>Nothing but <span class="m">__main__.py</span> touches the environment.</b> One file
+            to audit for "does this leak a credential?", and it is 43 statements long.
+          </li>
+        </ul>
+
+        <article class="adr">
+          <div class="adr-head">
+            <span class="adr-id">ADR-0002</span>
+            <h3>One flat package, layered by purity</h3>
+          </div>
+          <p class="chose">
+            <span class="over">Chose</span> a flat <span class="m">twenty48/</span> package of five
+            small modules ordered by distance from pure logic,
+            <span class="over">over</span> a <span class="m">src/</span> layout or an
+            <span class="m">advisor/</span> sub-package.
+          </p>
+
+          <h4>Rejected</h4>
+          <ul class="rejected">
+            <li>
+              <span class="x">✕</span>
+              <span><b>src/ layout</b> — marginally more correct for packaging, but ceremony out of
+                proportion to a small terminal game.</span>
+            </li>
+            <li>
+              <span class="x">✕</span>
+              <span><b>advisor/ as a package</b> — deferred until a second implementation actually
+                exists. No speculative directory.</span>
+            </li>
+          </ul>
+
+          <h4>Consequences</h4>
+          <ul class="consequences">
+            <li><span class="a">→</span><span>The package is <span class="m">twenty48</span>, not <span class="m">2048</span> — a module name cannot start with a digit.</span></li>
+            <li><span class="a">→</span><span>Credential handling is confined to one file, so there is exactly one place to audit.</span></li>
+            <li><span class="a">→</span><span>The test suite concentrates on <span class="m">board.py</span>, which is pure and deterministic.</span></li>
+          </ul>
+
+          <p class="flag">
+            <b>Drift worth naming:</b> the ADR says <span class="m">advisor.py</span> is "the only
+            module that imports <span class="m">anthropic</span>." In the shipped code no module
+            imports it except <span class="m">__main__.py</span>, lazily, once a credential is found
+            — so the no-credential game does not even require the SDK to be installed. The code went
+            further than the decision; the ADR text is stale on that line.
+          </p>
+
+          <details>
+            <summary>Full ADR-0002 text</summary>
+            <div class="full">
+              <p>
+                The game is a single flat package, <span class="m">twenty48</span>, split into five
+                small modules ordered by how far each sits from pure logic:
+              </p>
+              <ul>
+                <li><b>board.py</b> — the <span class="m">Move</span> enum and the immutable <span class="m">Board</span> value object. Pure, no I/O, no randomness of its own (RNG is injected). Holds the tested heart.</li>
+                <li><b>advisor.py</b> — the <span class="m">Advisor</span> protocol and its one <span class="m">ClaudeAdvisor</span> implementation. The only module that imports <span class="m">anthropic</span>.</li>
+                <li><b>ui.py</b> — terminal rendering and key input, nothing else.</li>
+                <li><b>loop.py</b> — the turn cycle, wiring board + ui + advisor together.</li>
+                <li><b>__main__.py</b> — the composition root: the <b>only</b> place that reads environment variables, detects the credential, and builds the advisor.</li>
+              </ul>
+              <p>
+                Nothing above the <span class="m">advisor</span> line knows Claude exists; nothing
+                but <span class="m">__main__</span> touches the environment.
+              </p>
+              <h5>Considered options</h5>
+              <ul>
+                <li><b>src/ layout</b> — rejected: marginally more correct for packaging, but adds ceremony out of proportion to a small terminal game.</li>
+                <li><b>advisor/ as a package</b> — deferred: it stays a single module until a second advisor implementation actually exists (see ADR-0001). No speculative directory.</li>
+              </ul>
+              <h5>Consequences</h5>
+              <ul>
+                <li>The package is named <span class="m">twenty48</span>, not <span class="m">2048</span> — a module name cannot start with a digit (<span class="m">import 2048</span> is a syntax error).</li>
+                <li>Secret/credential handling is confined to <span class="m">__main__.py</span>, so there is exactly one place to audit for "does this leak a key?"</li>
+                <li>The test suite concentrates on <span class="m">board.py</span>, which is pure and deterministic.</li>
+              </ul>
+              <p><a href="adr/0002-module-architecture.md">docs/adr/0002-module-architecture.md</a></p>
+            </div>
+          </details>
+        </article>
+      </section>
+
+      <!-- =========================== THE SEAM ======================== -->
+      <section class="wrap">
+        <p class="eyebrow">The seam</p>
+        <h2>Seven ways a hint can fail, one place it can land</h2>
+        <p class="lede">
+          The <b>H</b> key runs one synchronous call across a dashed seam. Every failure mode —
+          missing credential, dead network, expired token, rate limit, refusal, malformed reply, or a
+          move that isn't legal here — converges on a short status-line string. The game loop
+          contains no <span class="m">try</span> at all, because the Advisor is defined never to
+          raise into it.
+        </p>
+
+        <figure class="figure scroll-x">
+          <svg viewBox="0 0 920 470" role="img" aria-labelledby="funnel-title funnel-desc">
+            <title id="funnel-title">The Advisor call path and its degradation funnel</title>
+            <desc id="funnel-desc">
+              Pressing H calls loop._hint, which calls the Advisor protocol, implemented by
+              ClaudeAdvisor, which calls messages.create against the Messages API. Seven distinct
+              failure modes all converge into a single Degraded reason string, which is rendered on
+              the status line. The game loop never sees an exception.
+            </desc>
+
+            <!-- call chain -->
+            <text class="svg-cap" x="16" y="24">The happy path — one synchronous call</text>
+
+            <rect class="svg-box" x="16" y="36" width="74" height="40" rx="4" />
+            <text class="svg-label" x="53" y="61" text-anchor="middle">H key</text>
+            <path class="svg-arrow" d="M94 56 H112" marker-end="url(#head)" />
+
+            <rect class="svg-box" x="116" y="36" width="112" height="40" rx="4" />
+            <text class="svg-label" x="172" y="61" text-anchor="middle">loop._hint</text>
+            <path class="svg-arrow" d="M232 56 H250" marker-end="url(#head)" />
+
+            <rect class="svg-seam" x="254" y="36" width="140" height="40" rx="4" />
+            <text class="svg-label" x="324" y="55" text-anchor="middle">Advisor</text>
+            <text class="svg-cap" x="324" y="69" text-anchor="middle">protocol · the seam</text>
+            <path class="svg-arrow" d="M398 56 H416" marker-end="url(#head)" />
+
+            <rect x="420" y="36" width="136" height="40" rx="4" fill="#f59563" />
+            <text class="svg-label" x="488" y="61" text-anchor="middle">ClaudeAdvisor</text>
+            <path class="svg-arrow" d="M560 56 H578" marker-end="url(#head)" />
+
+            <rect class="svg-seam" x="582" y="36" width="140" height="40" rx="4" />
+            <text class="svg-label" x="652" y="55" text-anchor="middle">Client</text>
+            <text class="svg-cap" x="652" y="69" text-anchor="middle">structural · injected</text>
+            <path class="svg-arrow" d="M726 56 H744" marker-end="url(#head)" />
+
+            <rect x="748" y="36" width="156" height="40" rx="4" fill="#8f7a66" />
+            <text class="svg-label" x="826" y="55" text-anchor="middle" fill="#f7f3ec">Messages API</text>
+            <text class="svg-cap" x="826" y="69" text-anchor="middle" fill="#e4d9c9">haiku-4-5 · 10s timeout</text>
+
+            <line x1="16" y1="98" x2="904" y2="98" stroke="#ded4c6" stroke-width="2" />
+
+            <!-- failure funnel -->
+            <text class="svg-cap" x="16" y="126">Every failure mode</text>
+            <text class="svg-cap" x="424" y="126">caught at</text>
+            <text class="svg-cap" x="620" y="126">becomes</text>
+            <text class="svg-cap" x="620" y="404">and is shown as</text>
+
+            <g class="svg-label small">
+              <text x="330" y="156" text-anchor="end">no credential set</text>
+              <text x="330" y="192" text-anchor="end">network error</text>
+              <text x="330" y="228" text-anchor="end">timeout (10s)</text>
+              <text x="330" y="264" text-anchor="end">401 · credential rejected</text>
+              <text x="330" y="300" text-anchor="end">429 · rate limited</text>
+              <text x="330" y="336" text-anchor="end">refusal · stop_reason</text>
+              <text x="330" y="372" text-anchor="end">off-schema / truncated reply</text>
+              <text x="330" y="408" text-anchor="end">move not legal on this Board</text>
+            </g>
+
+            <g fill="#f65e3b">
+              <circle cx="340" cy="152" r="3.5" />
+              <circle cx="340" cy="188" r="3.5" />
+              <circle cx="340" cy="224" r="3.5" />
+              <circle cx="340" cy="260" r="3.5" />
+              <circle cx="340" cy="296" r="3.5" />
+              <circle cx="340" cy="332" r="3.5" />
+              <circle cx="340" cy="368" r="3.5" />
+              <circle cx="340" cy="404" r="3.5" />
+            </g>
+
+            <!-- catch-site brackets -->
+            <g class="svg-label small">
+              <path class="svg-fail" d="M348 152 H404" />
+              <text x="412" y="156">loop._hint</text>
+
+              <path class="svg-fail" d="M348 188 H380" />
+              <path class="svg-fail" d="M348 224 H380" />
+              <path class="svg-fail" d="M348 260 H380" />
+              <path class="svg-fail" d="M348 296 H380" />
+              <path class="svg-fail" d="M380 188 V296" />
+              <path class="svg-fail" d="M380 242 H404" />
+              <text x="412" y="234">except Exception</text>
+              <text x="412" y="250">→ _degrade_for</text>
+
+              <path class="svg-fail" d="M348 332 H380" />
+              <path class="svg-fail" d="M348 368 H380" />
+              <path class="svg-fail" d="M380 332 V368" />
+              <path class="svg-fail" d="M380 350 H404" />
+              <text x="412" y="354">_interpret</text>
+
+              <path class="svg-fail" d="M348 404 H404" />
+              <text x="412" y="400">board.legal_moves()</text>
+              <text class="svg-cap" x="412" y="414">our core, not the model</text>
+            </g>
+
+            <!-- convergence -->
+            <path class="svg-fail" d="M520 152 C570 152 570 252 604 262" />
+            <path class="svg-fail" d="M520 242 C570 242 578 258 604 262" />
+            <path class="svg-fail" d="M520 350 C570 350 570 272 604 262" />
+            <path class="svg-fail" d="M520 400 C574 400 570 274 604 262" />
+
+            <rect x="608" y="234" width="296" height="56" rx="4" fill="#f65e3b" />
+            <text class="svg-label" x="756" y="258" text-anchor="middle" fill="#fff5ef">Degraded(reason)</text>
+            <text class="svg-cap" x="756" y="276" text-anchor="middle" fill="#ffe6db">a frozen dataclass · never raised</text>
+
+            <path class="svg-arrow" d="M756 296 V330" marker-end="url(#head)" />
+            <rect x="608" y="334" width="296" height="46" rx="4" fill="#f2b179" />
+            <text class="svg-label" x="756" y="362" text-anchor="middle">next frame's status line</text>
+
+            <rect x="608" y="416" width="296" height="47" rx="4" fill="#26221e" />
+            <text x="756" y="434" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10.5" fill="#edc22e">
+              Advisor unavailable — rate limited;
+            </text>
+            <text x="756" y="446" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="10.5" fill="#edc22e">
+              try again shortly.
+            </text>
+
+            <defs>
+              <marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                <path d="M0 0 L10 5 L0 10 z" fill="#8f7a66" />
+              </marker>
+            </defs>
+          </svg>
+        </figure>
+        <p class="caption">
+          Six distinct messages exist, so the player learns something useful: re-authenticate, retry
+          shortly, or the model just picked an illegal move. Play continues in every case.
+        </p>
+
+        <article class="adr">
+          <div class="adr-head">
+            <span class="adr-id">ADR-0001</span>
+            <h3>The Advisor is an optional, Claude-only seam</h3>
+          </div>
+          <p class="chose">
+            <span class="over">Chose</span> one interface with a single Claude-backed
+            implementation, optional at runtime and forbidden from throwing into the game loop,
+            <span class="over">over</span> keeping a local heuristic fallback or making the AI
+            mandatory.
+          </p>
+
+          <h4>Rejected</h4>
+          <ul class="rejected">
+            <li>
+              <span class="x">✕</span>
+              <span><b>Keep the prototype's heuristic as a local fallback</b> — a second recommender
+                to maintain for no current requirement. The seam is kept so it can return without
+                touching the game core.</span>
+            </li>
+            <li>
+              <span class="x">✕</span>
+              <span><b>Make the AI mandatory</b> — the repo must run with zero setup for anyone who
+                clones it, and the brief forbids submitting credentials.</span>
+            </li>
+          </ul>
+
+          <h4>Consequences</h4>
+          <ul class="consequences">
+            <li><span class="a">→</span><span>The seam has exactly one implementation today. Deliberate: an extension point, not speculative generality.</span></li>
+            <li><span class="a">→</span><span>Two credentials are accepted — <span class="m">ANTHROPIC_API_KEY</span> as <span class="m">x-api-key</span>, or <span class="m">CLAUDE_CODE_OAUTH_TOKEN</span> as <span class="m">Authorization: Bearer</span> plus an OAuth beta header. The API key wins when both are set, so two auth headers are never sent at once.</span></li>
+            <li><span class="a">→</span><span>The OAuth path was verified empirically against <span class="m">POST /v1/messages</span> — a live 200 — and the three caveats it surfaced are all absorbed by the never-throws policy.</span></li>
+          </ul>
+
+          <p class="flag">
+            <b>Named, not resolved:</b> using a Claude Code subscription OAuth token for general
+            Messages API traffic is a grey area — no primary source was found permitting or
+            forbidding it. It stays a developer convenience;
+            <span class="m">ANTHROPIC_API_KEY</span> is the first-class path. Its tokens are also
+            short-lived and subject to subscription rate limits, which is why 401 and 429 have their
+            own status-line messages.
+          </p>
+
+          <details>
+            <summary>Full ADR-0001 text</summary>
+            <div class="full">
+              <p>
+                The move recommender ("Advisor") is a single interface with one implementation,
+                Claude-backed; the prototype's local heuristic is dropped. The Advisor is
+                <b>optional</b> — the game is fully playable without it — and it <b>never throws into
+                the game loop</b>: every failure (missing credential, network error, refusal, or a
+                suggestion that isn't a legal move) becomes a short status-line message and play
+                continues. The game core depends only on the Advisor contract, never on the
+                <span class="m">anthropic</span> package.
+              </p>
+              <h5>Considered options</h5>
+              <ul>
+                <li><b>Keep the heuristic as a local fallback</b> — rejected: the user wants Claude only for now and doesn't want to maintain a second recommender. The seam is kept so a fallback can be re-added later without touching the game core.</li>
+                <li><b>Make the AI mandatory (refuse to start without a credential)</b> — rejected: the repo must run with zero setup for anyone who clones it (graders included), and the brief says "do not submit with any credentials."</li>
+              </ul>
+              <h5>Consequences</h5>
+              <ul>
+                <li>The seam has exactly one implementation today. That is deliberate — an extension point, not speculative generality.</li>
+                <li>
+                  Authentication accepts <b>either</b> <span class="m">ANTHROPIC_API_KEY</span> (sent
+                  as <span class="m">x-api-key</span>; read automatically by the SDK) <b>or</b>
+                  <span class="m">CLAUDE_CODE_OAUTH_TOKEN</span> (an OAuth token, sent as
+                  <span class="m">Authorization: Bearer</span> <b>plus</b> the
+                  <span class="m">anthropic-beta: oauth-2025-04-20</span> header).
+                  <span class="m">ANTHROPIC_API_KEY</span> takes precedence when both are set. The
+                  <span class="m">ClaudeAdvisor</span> branches its client construction on which is
+                  present.
+                </li>
+                <li>
+                  The OAuth-token path against the Messages API is <b>verified working</b> (issue #4;
+                  research note 0004): an <span class="m">sk-ant-oat…</span> token sent as
+                  <span class="m">Authorization: Bearer</span> returns a live
+                  <span class="m">200</span> from <span class="m">POST /v1/messages</span>. The
+                  verification surfaced three caveats, all absorbed by the "never throws into the
+                  game loop" policy above:
+                  <ul>
+                    <li><b>Subscription-tier limits.</b> A <span class="m">CLAUDE_CODE_OAUTH_TOKEN</span> is a Claude subscription credential, governed by subscription rate limits rather than per-org API tiers. In testing <span class="m">claude-haiku-4-5</span> succeeded but <span class="m">claude-opus-4-8</span> returned <span class="m">429</span>. The Advisor must not hardcode a model the OAuth tier may rate-limit; a <span class="m">429</span> degrades to a status-line message.</li>
+                    <li><b>Short-lived tokens.</b> OAuth access tokens expire within hours and the Advisor cannot refresh them. A stale token returns <span class="m">401</span>, which degrades to a status-line message rather than a crash. A static <span class="m">CLAUDE_CODE_OAUTH_TOKEN</span> env var can therefore go stale between sessions.</li>
+                    <li><b>Terms of Service (unresolved).</b> Using a Claude Code / subscription OAuth token for general Messages API traffic is a gray area; no primary source was found permitting or forbidding it. <span class="m">ANTHROPIC_API_KEY</span> remains the clean, first-class credential, and OAuth is a convenience for developers already logged into Claude Code — not the path a grader is expected to use.</li>
+                    <li>The <span class="m">anthropic-beta: oauth-2025-04-20</span> header was <b>not</b> strictly required against <span class="m">/v1/messages</span> in testing, but the <span class="m">ClaudeAdvisor</span> sends it anyway: harmless where unneeded, and future-proof against endpoint changes.</li>
+                  </ul>
+                </li>
+              </ul>
+              <p><a href="adr/0001-optional-claude-only-advisor.md">docs/adr/0001-optional-claude-only-advisor.md</a></p>
+            </div>
+          </details>
+        </article>
+
+        <article class="adr">
+          <div class="adr-head">
+            <span class="adr-id">ADR-0003</span>
+            <h3>Ask with structured outputs, then verify the answer locally</h3>
+          </div>
+          <p class="chose">
+            <span class="over">Chose</span> the spec's own <span class="m">null</span>-using JSON
+            matrix under a short rules-and-goal system prompt, with the reply constrained to a fixed
+            schema — <span class="m">{ move: enum[LEFT, RIGHT, UP, DOWN], rationale: string }</span>
+            — and the returned move then checked against
+            <span class="m">board.legal_moves()</span>,
+            <span class="over">over</span> a per-turn dynamic enum, tool use, or parsing prose.
+          </p>
+
+          <h4>Rejected</h4>
+          <ul class="rejected">
+            <li>
+              <span class="x">✕</span>
+              <span><b>Dynamic enum of only the legal moves</b> — changes the schema every turn,
+                losing schema caching, and local validation already guarantees we never act on an
+                illegal suggestion.</span>
+            </li>
+            <li><span class="x">✕</span><span><b>Tool use with a strict enum param</b> — heavier machinery than a one-shot ask needs.</span></li>
+            <li><span class="x">✕</span><span><b>Plain text, parsed by us</b> — fragile.</span></li>
+          </ul>
+
+          <h4>Consequences</h4>
+          <ul class="consequences">
+            <li><span class="a">→</span><span>The fixed schema caches across turns.</span></li>
+            <li><span class="a">→</span><span>Move legality is guaranteed by our pure core, not by trusting the model. The advisor's correctness never depends on the model behaving.</span></li>
+            <li><span class="a">→</span><span><span class="m">claude-haiku-4-5</span> with extended thinking off — chosen for interactive response over maximal hint quality. Model and thinking live in one named constant, so sharpening hints later is a one-line change.</span></li>
+            <li><span class="a">→</span><span>Rationale brevity is enforced by the prompt, not the schema: structured outputs cannot cap string length.</span></li>
+          </ul>
+
+          <details>
+            <summary>Full ADR-0003 text</summary>
+            <div class="full">
+              <p>
+                The <span class="m">ClaudeAdvisor</span> sends the current board to the Messages API
+                as the spec's exact <span class="m">null</span>-using JSON matrix, with a short
+                system prompt stating the 2048 rules and the goal (avoid game-over, maximise the
+                chance of reaching 2048). The reply is constrained with <b>structured outputs</b> to
+                a fixed schema:
+              </p>
+              <p><span class="m">{ move: enum[LEFT, RIGHT, UP, DOWN], rationale: string }</span></p>
+              <p>
+                The returned <span class="m">move</span> is then validated against the board's
+                actually-legal moves. An illegal or no-op suggestion becomes a status-line message,
+                never a crash — the advisor's correctness never depends on the model behaving.
+              </p>
+              <ul>
+                <li><b>Model:</b> <span class="m">claude-haiku-4-5</span>, extended thinking <b>off</b> — chosen for interactive responsiveness over maximal hint quality (the H key should return in ~a second, not stall the game). The model id and thinking setting live in a single named constant in <span class="m">advisor.py</span>; sharpening hints later (Opus, or thinking on) is a one-line change.</li>
+                <li><b>Rationale length</b> is enforced by the prompt, not the schema — structured outputs do not support <span class="m">maxLength</span> on strings.</li>
+              </ul>
+              <h5>Considered options</h5>
+              <ul>
+                <li><b>Dynamic enum of only the legal moves</b> — rejected: it changes the schema every turn (losing schema caching), and local legal-move validation already guarantees we never act on an illegal suggestion.</li>
+                <li><b>Tool use with a strict enum param</b> — rejected: heavier machinery than a one-shot ask needs.</li>
+                <li><b>Plain text, parsed by us</b> — rejected: fragile.</li>
+              </ul>
+              <h5>Consequences</h5>
+              <ul>
+                <li>The fixed schema caches across turns.</li>
+                <li>Move legality is guaranteed by our pure core, not by trusting the model.</li>
+                <li>Swapping model or turning thinking on is a single-line change.</li>
+              </ul>
+              <p><a href="adr/0003-claude-advisor-request.md">docs/adr/0003-claude-advisor-request.md</a></p>
+            </div>
+          </details>
+        </article>
+      </section>
+
+      <!-- ============================= TESTS ========================== -->
+      <section class="wrap">
+        <p class="eyebrow">Tests</p>
+        <h2>Four seams, four hand-written fakes, no network</h2>
+        <p class="lede">
+          Same ladder, greyed out, with the test doubles pinned where they substitute. The seams were
+          not added for the tests — they exist because effects belong at the edges — but every one of
+          them turns out to be the place a test plugs in. No mocking library, no patching, no
+          network, no sleeping: 61 tests in 0.12 seconds.
+        </p>
+
+        <div class="ladder">
+          <div class="axis"><span class="axis-label">substitution points ↑</span></div>
+          <div class="rungs">
+            <div class="rung">
+              <div class="tile faded">
+                <span class="name">__main__.py</span>
+                <span class="role">
+                  Credential precedence is factored out into the pure
+                  <span class="m">select_credential(env)</span>, so it is testable with a plain dict
+                  — the wiring around it is verified by playing the game.
+                </span>
+                <div class="double">
+                  <span class="tag">dict <span class="at">as env</span></span>
+                  <span class="tag">6 tests</span>
+                </div>
+              </div>
+            </div>
+            <div class="rung">
+              <div class="tile faded">
+                <span class="name">loop.py</span>
+                <span class="role">
+                  The highest seam: every effect is a keyword argument, so one call to
+                  <span class="m">run</span> drives whole-game behaviour deterministically and
+                  returns the final Board to assert on.
+                </span>
+                <div class="double">
+                  <span class="tag">ScriptedKeys <span class="at">→ KeySource</span></span>
+                  <span class="tag">StringIO <span class="at">→ Writer</span></span>
+                  <span class="tag">ScriptedRng <span class="at">→ Rng</span></span>
+                  <span class="tag">FakeAdvisor <span class="at">→ Advisor</span></span>
+                  <span class="tag">11 tests</span>
+                </div>
+              </div>
+            </div>
+            <div class="rung split">
+              <div class="tile faded">
+                <span class="name">ui.py</span>
+                <span class="role">
+                  <span class="m">render</span> writes to an injected writer and
+                  <span class="m">parse_key</span> is a pure function, so both are tested as
+                  values — no terminal required.
+                </span>
+                <div class="double">
+                  <span class="tag">StringIO <span class="at">→ Writer</span></span>
+                  <span class="tag">9 tests</span>
+                </div>
+              </div>
+              <div class="tile faded">
+                <span class="name">advisor.py</span>
+                <span class="role">
+                  A fake client pins the exact request built — model, thinking, board-as-matrix,
+                  schema — and drives all seven degradation paths by raising canned errors.
+                </span>
+                <div class="double">
+                  <span class="tag">FakeClient <span class="at">→ Client</span></span>
+                  <span class="tag">15 tests</span>
+                </div>
+              </div>
+            </div>
+            <div class="rung">
+              <div class="tile faded">
+                <span class="name">board.py</span>
+                <span class="role">
+                  Pure and frozen, so the tests are input-to-output comparisons. The injected RNG is
+                  the only non-determinism, and a scripted one removes it.
+                </span>
+                <div class="double">
+                  <span class="tag">ScriptedRng <span class="at">→ Rng</span></span>
+                  <span class="tag">20 tests</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <h4>Spec conformance is not paraphrased</h4>
+        <p>
+          The rules came from a written brief with worked examples. Those examples are the fixtures —
+          each after-board copied verbatim out of <span class="m">2048.md</span>, so a regression in
+          the slide-and-merge rule fails against the spec's own numbers rather than against my
+          reading of them.
+        </p>
+        <div class="fixtures">
+          <span>golden</span> move LEFT · move RIGHT · move UP — one shared before-board from the spec<br />
+          <span>golden</span> move DOWN — hand-worked, the one direction the spec omits<br />
+          <span>golden</span> the spec's win board · the spec's "no more moves" board<br />
+          <span>property</span> each tile merges at most once per move · a freshly merged tile does not merge again<br />
+          <span>property</span> spawn distribution: a 4 below the probability, a 2 otherwise · <span class="m">from_grid</span>/<span class="m">as_grid</span> round-trips with nulls
+        </div>
+      </section>
+
+      <!-- ============================ NUMBERS ========================= -->
+      <section class="wrap">
+        <p class="eyebrow">Numbers</p>
+        <h2>Where the coverage is, and where it isn't</h2>
+        <p class="lede">
+          Line coverage from <span class="m">task test</span>, run the day this page was built. The
+          shape is the point: the pure core and the two modules with real logic are at or near 100 %,
+          and everything uncovered is terminal or process wiring.
+        </p>
+
+        <div class="bars">
+          <div class="bar-row">
+            <span>board.py</span>
+            <span class="bar-track"><span class="bar-fill" style="width: 99%; background: var(--t2048)"></span></span>
+            <span>99% <span class="miss">1 / 80</span></span>
+          </div>
+          <div class="bar-row">
+            <span>advisor.py</span>
+            <span class="bar-track"><span class="bar-fill" style="width: 100%; background: var(--t2048)"></span></span>
+            <span>100% <span class="miss">0 / 65</span></span>
+          </div>
+          <div class="bar-row">
+            <span>loop.py</span>
+            <span class="bar-track"><span class="bar-fill" style="width: 100%; background: var(--t2048)"></span></span>
+            <span>100% <span class="miss">0 / 37</span></span>
+          </div>
+          <div class="bar-row">
+            <span>ui.py</span>
+            <span class="bar-track"><span class="bar-fill" style="width: 80%; background: var(--t16)"></span></span>
+            <span>80% <span class="miss">11 / 54</span></span>
+          </div>
+          <div class="bar-row">
+            <span>__main__.py</span>
+            <span class="bar-track"><span class="bar-fill" style="width: 65%; background: var(--t64)"></span></span>
+            <span>65% <span class="miss">15 / 43</span></span>
+          </div>
+          <div class="bar-row total">
+            <span>total</span>
+            <span class="bar-track"><span class="bar-fill" style="width: 90%; background: var(--brown)"></span></span>
+            <span>90% <span class="miss">27 / 280</span></span>
+          </div>
+        </div>
+        <p class="caption">
+          61 passed in 0.12s · ruff clean · mypy --strict clean across 11 source files
+        </p>
+      </section>
+
+      <!-- ============================== GAPS ========================== -->
+      <section class="wrap">
+        <p class="eyebrow">Gaps</p>
+        <h2>What I know is missing</h2>
+
+        <div class="gaps">
+          <div class="gap headline">
+            <span class="tagline">the one I'd fix first</span>
+            <h3>Nothing in the suite talks to the real Messages API</h3>
+            <p>
+              <span class="m">FakeClient</span> stands in everywhere, so the tests pin the request
+              <em>shape</em> — model, thinking, board matrix, schema — but prove nothing about the
+              live contract. The OAuth path was verified by hand, once, and written up as a research
+              note; that is a dated observation, not a regression test. If the API's structured-output
+              field were renamed tomorrow, the suite would stay green.
+            </p>
+            <p class="answer">
+              <b>Why it was acceptable here:</b> the blast radius is bounded by design — a broken
+              contract raises inside <span class="m">messages.create</span>, hits the one
+              <span class="m">except</span>, and becomes "Advisor unavailable" while the game plays
+              on. <b>What I'd add:</b> a nightly smoke test, marked and excluded from
+              <span class="m">task check</span>, before anything depended on this.
+            </p>
+          </div>
+
+          <div class="gap">
+            <span class="tagline">coverage</span>
+            <h3><span class="m">__main__.py</span> at 65 %</h3>
+            <p>
+              The uncovered 15 statements are the SDK client construction and
+              <span class="m">main()</span> itself. The decision worth testing —
+              credential precedence — was deliberately extracted into the pure
+              <span class="m">select_credential</span> and is covered. What's left is wiring I
+              verified by playing.
+            </p>
+          </div>
+
+          <div class="gap">
+            <span class="tagline">coverage</span>
+            <h3><span class="m">ui.py</span> at 80 %</h3>
+            <p>
+              The 11 uncovered statements are all in <span class="m">TerminalKeySource</span>, the
+              raw-mode <span class="m">termios</span> reader. Isolating the untestable part into one
+              13-line adapter was the point; not testing it is still a gap, and it is where a
+              terminal-handling bug would hide.
+            </p>
+          </div>
+
+          <div class="gap">
+            <span class="tagline">measurement</span>
+            <h3>Line coverage only — no branch coverage</h3>
+            <p>
+              <span class="m">coverage.xml</span> reports
+              <span class="m">branch-rate 0</span>: branch measurement was never switched on. It is a
+              one-flag change (<span class="m">--cov-branch</span>) that I simply didn't make, and
+              until it is on, 90 % is a weaker claim than it looks.
+            </p>
+          </div>
+
+          <div class="gap">
+            <span class="tagline">design</span>
+            <h3>One implementation, so the seam is unproven</h3>
+            <p>
+              ADR-0001 argues the Advisor is an extension point rather than speculative generality —
+              but with a single implementation, that argument is untested. The honest check is the
+              cheap one: a heuristic advisor would need no change to
+              <span class="m">board</span>, <span class="m">ui</span>, or
+              <span class="m">loop</span>, only a second class satisfying
+              <span class="m">suggest(board) -> Advice</span> and one line in the composition root.
+            </p>
+          </div>
+        </div>
+
+        <p class="scope">
+          <b>Deliberately out of scope, not overlooked:</b> Windows support (input uses
+          <span class="m">termios</span>, so Linux and macOS only), score, persistence, undo, and
+          continuing play past 2048. None appear in <span class="m">2048.md</span>; the brief's
+          requirements are the boundary, and the win and lose conditions it does specify are both
+          implemented and covered by golden fixtures.
+        </p>
+      </section>
+
+      <!-- ============================= GATES ========================== -->
+      <section class="wrap">
+        <p class="eyebrow">Gates</p>
+        <h2>And it's enforced, not just intended</h2>
+        <p class="lede">
+          One command runs the lot. Everything on this page — the coverage figures, the clean
+          type-check, the 61 passing tests — is what <span class="m">task check</span> printed before
+          the page was written.
+        </p>
+
+        <div class="gates">
+          <div class="gate">
+            <span class="cmd">ruff check</span>
+            <span class="what">Lint: pycodestyle, pyflakes, isort, pyupgrade, bugbear, simplify.</span>
+            <span class="verdict">✓ all checks passed</span>
+          </div>
+          <div class="gate">
+            <span class="cmd">mypy --strict</span>
+            <span class="what">Strict typing across the package and the tests. Two casts total, both at documented protocol boundaries.</span>
+            <span class="verdict">✓ 11 files, no issues</span>
+          </div>
+          <div class="gate">
+            <span class="cmd">pytest --cov</span>
+            <span class="what">61 tests, no network, no fixtures directory, no mocking library.</span>
+            <span class="verdict">✓ 61 passed in 0.12s</span>
+          </div>
+          <div class="gate">
+            <span class="cmd">task check</span>
+            <span class="what">All three, in that order. The gate a change has to clear.</span>
+            <span class="verdict">✓ green</span>
+          </div>
+        </div>
+
+        <p class="scope">
+          The same discipline runs one level up: the brief became a glossary
+          (<span class="m">CONTEXT.md</span>) that fixes the vocabulary used in code, tests, and
+          these ADRs — Board, Cell, Tile, Spawn, Move, Merge, Advisor, Suggestion — three ADRs, one
+          research note recording an empirical check, and fifteen issues and pull requests. The
+          decisions are written down where the next person will look for them.
+        </p>
+      </section>
+    </main>
+
+    <footer class="wrap">
+      twenty48 · nico-hen/2048 · a presentation snapshot built 25 July 2026 from commit 02f9272 —
+      the repo, not this page, is the source of truth.
+    </footer>
+  </body>
+</html>
