@@ -1,6 +1,13 @@
 # Base image with micromamba preinstalled
 FROM mambaorg/micromamba:latest
 
+user root
+
+ARG MAMBA_USER=mambauser
+
+RUN apt-get update && apt-get install -y ssh
+
+user $MAMBA_USER
 # Copy environment file
 COPY environment.yml /tmp/environment.yml
 
