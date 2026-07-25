@@ -2,9 +2,11 @@ name: twenty48
 channels:
   - conda-forge
 dependencies:
+  - ssh
   - python=3.14
   - pip=26.1
   - nodejs=26.5
+  - gh
   - git=2.55.0
   - pip:
     - go-task-bin
